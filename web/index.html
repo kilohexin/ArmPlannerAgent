@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b6fe8'/%3E%3Cpath d='M18 42h18a10 10 0 0 0 0-20H26' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='42' cy='42' r='6' fill='white'/%3E%3C/svg%3E" />
+    <title>ArmPlannerAgent - Lebai LM3</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <button class="icon-button" aria-label="菜单">☰</button>
+          <strong>ArmPlannerAgent</strong>
+          <span class="divider"></span>
+          <span>项目：乐白 LM3 抓取放置演示</span>
+        </div>
+        <div class="actions">
+          <button id="save-scene" class="icon-button" title="保存场景">保存</button>
+          <button id="run-task" class="primary-button">运行任务</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="viewport-panel">
+          <div class="toolbar">
+            <button data-tool="select" class="tool active">选择</button>
+            <button data-tool="move" class="tool">移动</button>
+            <button data-view="top" class="tool">俯视</button>
+            <button data-view="front" class="tool">正视</button>
+            <button data-view="iso" class="tool">等轴</button>
+            <button data-view="eye" class="tool">相机视角</button>
+            <button id="reset-scene" class="tool">重置</button>
+          </div>
+          <div id="scene-root" class="scene-root"></div>
+          <div class="statusbar">
+            <span><span class="dot ready"></span> 就绪</span>
+            <span>机械臂：乐白 LM3 + LMG-90/通用夹爪</span>
+            <span id="planning-time">规划耗时：--</span>
+            <span id="waypoint-count">轨迹点：0</span>
+            <span id="duration">预计执行：--</span>
+          </div>
+        </section>
+
+        <aside class="agent-panel">
+          <section class="panel-section">
+            <h2>智能体</h2>
+            <p>乐白 LM3 机械臂 + 夹爪规划智能体。</p>
+
+            <div class="api-key-row">
+              <label for="api-key">DashScope API Key</label>
+              <input id="api-key" type="password" placeholder="sk-..." autocomplete="off" />
+              <button id="save-api-key" class="small-button">保存</button>
+            </div>
+            <div class="api-key-row">
+              <label for="model-id">模型 ID</label>
+              <input id="model-id" type="text" placeholder="qwen3.5-flash / qwen-vl-plus" autocomplete="off" />
+              <button id="save-model-id" class="small-button">保存</button>
+            </div>
+
+            <div class="tcp-calibration">
+              <div class="tcp-calibration-title">夹爪 TCP 校准 (mm)</div>
+              <label>X <input id="tcp-x" type="number" step="1" /></label>
+              <label>Y <input id="tcp-y" type="number" step="1" /></label>
+              <label>Z <input id="tcp-z" type="number" step="1" /></label>
+              <button id="save-tcp" class="small-button">保存校准</button>
+            </div>
+
+            <div class="task-row">
+              <input id="task-input" value="把红色方块放到蓝色方块上" aria-label="任务输入" />
+              <button id="send-task" class="send-button" aria-label="运行任务">运行</button>
+            </div>
+          </section>
+
+          <section class="panel-section camera-section">
+            <div class="section-header">
+              <h2>手外眼相机</h2>
+              <div>
+                <button id="capture-camera" class="small-button">拍照</button>
+                <button id="clear-camera" class="small-button">清除</button>
+              </div>
+            </div>
+            <div class="camera-grid">
+              <div class="camera-preview-wrap">
+                <img id="camera-preview" alt="手外眼相机截图预览" />
+                <span id="camera-placeholder">暂无截图</span>
+              </div>
+              <div class="camera-meta">
+                <label class="checkbox-label">
+                  <input id="use-vision" type="checkbox" checked />
+                  发送视觉提示
+                </label>
+                <p id="camera-status">固定相机位于工作台外侧，用于模拟 RGB-D/VLM 的视觉输入。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-section table-section">
+            <div class="section-header">
+              <h2>场景图</h2>
+              <div>
+                <button id="add-cube" class="small-button">添加方块</button>
+                <button id="add-cylinder" class="small-button">添加圆柱</button>
+              </div>
+            </div>
+            <div id="scene-table" class="scene-table"></div>
+          </section>
+
+          <section class="panel-section">
+            <div class="pipeline">
+              <div class="stage done">Plan</div>
+              <div class="stage" id="validate-stage">Validate</div>
+              <div class="stage" id="repair-stage">Repair</div>
+              <div class="stage" id="execute-stage">Execute</div>
+            </div>
+            <div id="score-panel" class="score-panel"></div>
+          </section>
+
+          <section class="panel-section log-section">
+            <div class="section-header">
+              <h2>执行日志</h2>
+              <button id="clear-log" class="small-button">清空</button>
+            </div>
+            <div id="execution-log" class="execution-log"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "arm-planner-agent-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
+    "cannon-es": "^0.20.0",
+    "three": "^0.181.2",
+    "urdf-loader": "^0.13.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.15"
+  }
+}

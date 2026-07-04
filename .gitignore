@@ -1,0 +1,10 @@
+.env
+.venv/
+web/node_modules/
+web/dist/
+__pycache__/
+.pytest_cache/
+.tmp-edge-profile*/
+tmp-render-check.png
+vite-smoke.log
+乐白机械臂/
