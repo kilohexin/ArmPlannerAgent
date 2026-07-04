@@ -54,7 +54,7 @@ describe('createLocalPlan', () => {
     expect(plan.robotModel?.id).toBe('lebai-lm3');
     expect(plan.cartesianWaypoints).toHaveLength(7);
     expect(plan.cartesianWaypoints![0].id).toBe('start_tcp');
-    expect(plan.cartesianWaypoints![0].frame).toBe('tcp');
+    expect(plan.cartesianWaypoints![0].frame).toBe('grasp_center');
     expect(plan.jointTrajectory).toHaveLength(7);
     expect(plan.jointTrajectory![0].q).toHaveLength(6);
   });

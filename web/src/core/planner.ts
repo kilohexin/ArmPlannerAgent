@@ -1,6 +1,7 @@
 import { createLm3JointTrajectory, forwardKinematicsLm3, LM3_HOME_JOINTS } from './lm3Kinematics';
-import { createGraspSpec, inferGraspMode, toolTargetFromGraspCenter } from './grasp';
+import { createGraspSpec, graspCenterFromToolTarget, inferGraspMode, toolTargetFromGraspCenter } from './grasp';
 import { findObjectByReference } from './sceneGraph';
+import { getTcpCalibration } from './tcpCalibration';
 import { createPickPlaceTrajectory, distanceXZ, scoreTrajectory, stackedCenter } from './trajectory';
 import type {
   CartesianWaypoint,
@@ -50,8 +51,8 @@ export function createPlanFromLLM(
   const target = targetObjectId ? scene.objects.find((object) => object.id === targetObjectId) : null;
   const grasp = target ? createGraspSpec(target, inferGraspMode(instruction), scene.robot.base) : undefined;
   const motionTrajectory = steps.filter((step) => step.pose).map((step) => step.pose!);
-  const trajectory = withStartTcp(scene, motionTrajectory);
-  const cartesianWaypoints = createCartesianWaypointsFromSteps(scene, steps);
+  const trajectory = withStartTcp(scene, motionTrajectory, grasp);
+  const cartesianWaypoints = createCartesianWaypointsFromSteps(scene, steps, grasp);
   const jointTrajectory = createLm3JointTrajectory(
     cartesianWaypoints.map((waypoint) => toLm3Waypoint(waypoint, grasp)),
     initialJoints(scene)
@@ -247,7 +248,7 @@ function createPickPlacePlanInternal(
 ): ManipulationPlan {
   const grasp = createGraspSpec(target, inferGraspMode(instruction), scene.robot.base);
   const motionTrajectory = createPickPlaceTrajectory(target, destination, grasp);
-  const trajectory = withStartTcp(scene, motionTrajectory);
+  const trajectory = withStartTcp(scene, motionTrajectory, grasp);
   const cartesianWaypoints = createPickPlaceWaypoints(scene, trajectory);
   const jointTrajectory = createLm3JointTrajectory(
     cartesianWaypoints.map((waypoint) => toLm3Waypoint(waypoint, grasp)),
@@ -271,7 +272,7 @@ function createPickPlacePlanInternal(
 function createPickOnlyPlan(scene: SceneState, instruction: string, target: SceneObject): ManipulationPlan {
   const grasp = createGraspSpec(target, inferGraspMode(instruction), scene.robot.base);
   const motionTrajectory = [preGraspFromGrasp(grasp), grasp.center, { x: grasp.center.x, y: SAFE_Y, z: grasp.center.z }];
-  const trajectory = withStartTcp(scene, motionTrajectory);
+  const trajectory = withStartTcp(scene, motionTrajectory, grasp);
   const cartesianWaypoints = createCartesianWaypoints(
     trajectory,
     ['start_tcp', 'pre_grasp', 'grasp', 'lift'],
@@ -318,7 +319,7 @@ function createRelativePlacePlan(
     placeCenter,
     { x: placeCenter.x, y: SAFE_Y, z: placeCenter.z },
   ];
-  const trajectory = withStartTcp(scene, motionTrajectory);
+  const trajectory = withStartTcp(scene, motionTrajectory, grasp);
   const cartesianWaypoints = createPickPlaceWaypoints(scene, trajectory);
   const jointTrajectory = createLm3JointTrajectory(
     cartesianWaypoints.map((waypoint) => toLm3Waypoint(waypoint, grasp)),
@@ -355,7 +356,7 @@ function createHeldPlacePlan(
     placeCenter,
     { x: placeCenter.x, y: SAFE_Y, z: placeCenter.z },
   ];
-  const trajectory = withStartTcp(scene, motionTrajectory);
+  const trajectory = withStartTcp(scene, motionTrajectory, grasp);
   const cartesianWaypoints = createCartesianWaypoints(
     trajectory,
     ['start_tcp', 'lift', 'pre_place', 'place', 'retreat'],
@@ -454,7 +455,7 @@ function createCartesianWaypoints(
   return trajectory.map((position, index) => ({
     id: ids[index] ?? `wp_${index + 1}`,
     position,
-    frame: ids[index] === 'start_tcp' ? 'tcp' : 'grasp_center',
+    frame: 'grasp_center' as const,
     targetDirection: topDown,
     gripper: grippers[index] ?? 'hold',
     speed: index === 1 || index === 2 ? 0.05 : 0.15,
@@ -463,7 +464,7 @@ function createCartesianWaypoints(
   }));
 }
 
-function createCartesianWaypointsFromSteps(scene: SceneState, steps: PlanStep[]): CartesianWaypoint[] {
+function createCartesianWaypointsFromSteps(scene: SceneState, steps: PlanStep[], grasp?: GraspSpec): CartesianWaypoint[] {
   const topDown = { x: 0, y: -1, z: 0 };
   const motionSteps = steps.filter((step): step is PlanStep & { pose: Vector3 } => Boolean(step.pose));
   if (!motionSteps.length) {
@@ -473,13 +474,13 @@ function createCartesianWaypointsFromSteps(scene: SceneState, steps: PlanStep[])
   return [
     {
       id: 'start_tcp',
-      position: startTcp(scene),
-      frame: 'tcp' as const,
+      position: startGraspCenter(scene, grasp),
+      frame: 'grasp_center' as const,
       targetDirection: topDown,
       gripper: startGripper(scene),
       speed: 0.15,
       blendRadius: 0.02,
-      description: 'current TCP before planning',
+      description: 'current grasp center before planning',
     },
     ...motionSteps.map((step, index) => ({
       id: `${step.action}_${index + 1}`,
@@ -495,25 +496,40 @@ function createCartesianWaypointsFromSteps(scene: SceneState, steps: PlanStep[])
 }
 
 function toLm3Waypoint(waypoint: CartesianWaypoint, grasp?: GraspSpec) {
+  // 所有航点的 position 现在都是 grasp_center 坐标
+  // 需要通过 toolOffset 转为 TCP 坐标给 IK 求解
+  const position = grasp
+    ? toolTargetFromGraspCenter(waypoint.position, grasp)
+    : addTcpCalibration(waypoint.position);
   return {
     id: waypoint.id,
-    position: waypoint.frame === 'tcp' || !grasp
-      ? waypoint.position
-      : toolTargetFromGraspCenter(waypoint.position, grasp),
+    position,
     targetDirection: waypoint.targetDirection,
     gripper: waypoint.gripper,
   };
 }
 
-function withStartTcp(scene: SceneState, motionTrajectory: Vector3[]): Vector3[] {
+function addTcpCalibration(pos: Vector3): Vector3 {
+  const cal = getTcpCalibration();
+  return { x: pos.x + cal.x, y: pos.y + cal.y, z: pos.z + cal.z };
+}
+
+function withStartTcp(scene: SceneState, motionTrajectory: Vector3[], grasp?: GraspSpec): Vector3[] {
   if (!motionTrajectory.length) {
     return [];
   }
-  return [startTcp(scene), ...motionTrajectory];
+  return [startGraspCenter(scene, grasp), ...motionTrajectory];
 }
 
-function startTcp(scene: SceneState): Vector3 {
-  return scene.robot.tcp ?? forwardKinematicsLm3(initialJoints(scene)).position;
+function startGraspCenter(scene: SceneState, grasp?: GraspSpec): Vector3 {
+  // 使用解析 FK 而非 GLB 模型的 tcp，确保与 IK 同源、坐标系自洽
+  const tcp = forwardKinematicsLm3(initialJoints(scene)).position;
+  if (grasp) {
+    return graspCenterFromToolTarget(tcp, grasp);
+  }
+  // 无 grasp 时用 TCP 校准偏移做逆变换：grasp_center = tcp - toolOffset
+  const cal = getTcpCalibration();
+  return { x: tcp.x - cal.x, y: tcp.y - cal.y, z: tcp.z - cal.z };
 }
 
 function initialJoints(scene: SceneState): readonly number[] {

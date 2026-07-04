@@ -237,8 +237,19 @@ export class RobotScene {
       return;
     }
 
+    // 轨迹存储的是 grasp_center 坐标，可视化时转成 TCP 坐标
+    // 起点直接用 GLB 模型实际 TCP 位置，避免 IK 与 GLB 模型的固定偏差
+    const currentTcp = this.robot?.getEndEffectorPosition();
+    const tcpPoints = plan.trajectory.map((point, i) => {
+      if (i === 0 && currentTcp) {
+        return { x: currentTcp.x, y: currentTcp.y, z: currentTcp.z };
+      }
+      return plan.grasp
+        ? toolTargetFromGraspCenter(point, plan.grasp!)
+        : point;
+    });
     const material = new THREE.LineBasicMaterial({ color: 0x0b6fe8 });
-    const points = plan.trajectory.map((point) => new THREE.Vector3(point.x, point.y, point.z));
+    const points = tcpPoints.map((point) => new THREE.Vector3(point.x, point.y, point.z));
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material);
     this.trajectoryGroup.add(line);
 
@@ -334,13 +345,14 @@ export class RobotScene {
 
     const startAngles = [...this.currentJointAngles];
     const endAngles = targetAngles;
-    const frames = 40;
+    const jointDistance = Math.max(...startAngles.map((s, i) => Math.abs(endAngles[i] - s)));
+    const frames = Math.max(30, Math.min(80, Math.round(jointDistance * 40) + 30));
     const startGraspCenter = grasp
       ? this.commandedGraspCenter ?? { ...destination }
       : null;
 
     for (let i = 1; i <= frames; i++) {
-      const t = i / frames;
+      const t = easeInOut(i / frames);
       const interpolated = startAngles.map((start, index) =>
         start + (endAngles[index] - start) * t
       );
@@ -364,10 +376,15 @@ export class RobotScene {
     const start = this.commandedGraspCenter ??
       this.getCurrentGraspCenter(grasp) ??
       { ...destination };
-    const frames = 40;
+    const distance = Math.hypot(
+      destination.x - start.x,
+      destination.y - start.y,
+      destination.z - start.z
+    );
+    const frames = Math.max(30, Math.min(80, Math.round(distance * 200) + 30));
 
     for (let i = 1; i <= frames; i++) {
-      const t = i / frames;
+      const t = easeInOut(i / frames);
       const center = {
         x: start.x + (destination.x - start.x) * t,
         y: start.y + (destination.y - start.y) * t,
@@ -624,9 +641,9 @@ export class RobotScene {
     this.robot.robot.updateMatrixWorld(true);
     const tcp = this.robot.getEndEffectorPosition();
     this.sceneState.robot.tcp = {
-      x: Math.round(tcp.x * 1000) / 1000,
-      y: Math.round(tcp.y * 1000) / 1000,
-      z: Math.round(tcp.z * 1000) / 1000,
+      x: Math.round(tcp.x * 10000) / 10000,
+      y: Math.round(tcp.y * 10000) / 10000,
+      z: Math.round(tcp.z * 10000) / 10000,
     };
   }
 
@@ -785,6 +802,10 @@ function toVector3(vector: THREE.Vector3): Vector3 {
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function easeInOut(t: number): number {
+  return t * t * (3 - 2 * t);
 }
 
 function clamp(value: number, min: number, max: number): number {

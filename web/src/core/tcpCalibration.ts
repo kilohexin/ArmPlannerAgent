@@ -2,8 +2,8 @@ import type { Vector3 } from './types';
 
 export const TCP_CALIBRATION_STORAGE_KEY = 'arm-planner-tcp-calibration';
 export const DEFAULT_GRIPPER_TCP_CALIBRATION: Vector3 = {
-  x: -0.02,
-  y: 0,
+  x: 0.016,
+  y: 0.065,
   z: 0,
 };
 
